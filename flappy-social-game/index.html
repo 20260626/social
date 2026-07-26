@@ -1,0 +1,709 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Соцсети: быть, а не казаться</title>
+<style>
+  :root{
+    --like-pink:#ff4d7d;
+    --like-coral:#ff8a5c;
+    --union-blue:#2b6cff;
+    --union-yellow:#ffd23f;
+    --bg-dark:#070812;
+    --ink:#f5f6fb;
+  }
+  *{ box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html,body{
+    margin:0; padding:0; width:100%; height:100%;
+    background:var(--bg-dark); color:var(--ink);
+    overflow:hidden; overscroll-behavior:none; touch-action:none;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Arial,sans-serif;
+    user-select:none;
+  }
+  #app{ position:fixed; inset:0; }
+  canvas{ display:block; width:100%; height:100%; touch-action:none; }
+
+  .overlay{
+    position:absolute; inset:0; z-index:10;
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    text-align:center; padding:28px 20px; gap:14px;
+    background:radial-gradient(120% 100% at 50% 0%, rgba(43,108,255,0.18), rgba(5,6,10,0.94) 60%);
+    backdrop-filter:blur(2px);
+  }
+  .hidden{ display:none !important; }
+
+  .logo-row{ display:flex; align-items:center; gap:10px; margin-bottom:2px; }
+  .logo-row img{ width:38px; height:38px; object-fit:contain; filter:drop-shadow(0 0 6px rgba(0,0,0,0.4)); }
+
+  h1.title{
+    font-size:clamp(22px,6.5vw,32px);
+    margin:0;
+    line-height:1.2;
+    background:linear-gradient(90deg,var(--like-pink),var(--union-blue));
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    font-weight:800;
+  }
+  p.subtitle{
+    font-size:clamp(13px,3.6vw,16px);
+    color:#c8cbe0; max-width:340px; margin:0; line-height:1.5;
+  }
+  .legend{ display:flex; gap:22px; margin:6px 0; }
+  .legend-item{ display:flex; flex-direction:column; align-items:center; gap:6px; font-size:12px; color:#aeb2cc;}
+  .legend-item img{ width:34px; height:34px; object-fit:contain; }
+  .legend-item span.lbl-like{ color:var(--like-pink); font-weight:700; }
+  .legend-item span.lbl-union{ color:var(--union-blue); font-weight:700; }
+
+  .btn{
+    appearance:none; border:none; cursor:pointer;
+    font-size:17px; font-weight:800; letter-spacing:0.02em;
+    padding:14px 38px; border-radius:999px; color:#fff;
+    background:linear-gradient(90deg,var(--like-pink),var(--union-blue));
+    box-shadow:0 8px 24px rgba(43,108,255,0.35), 0 4px 14px rgba(255,77,125,0.25);
+    min-height:50px; margin-top:6px;
+    transition:transform 0.12s ease;
+  }
+  .btn:active{ transform:scale(0.95); }
+
+  #overlay-gameover .like-score{
+    font-size:clamp(34px,11vw,56px);
+    font-weight:900; margin:0;
+    color:var(--like-pink);
+    text-shadow:0 0 18px rgba(255,77,125,0.75), 0 0 40px rgba(255,138,92,0.4);
+    letter-spacing:0.01em;
+  }
+  #overlay-gameover .truth-caption{
+    font-size:12px; color:#7d8199; margin:14px 0 2px; letter-spacing:0.03em;
+  }
+  #overlay-gameover .union-score{
+    font-size:15px; font-weight:600; color:#9fb0e8; margin:0;
+  }
+  #overlay-gameover .tagline{
+    font-size:13px; color:#c8cbe0; margin-top:18px; max-width:300px; line-height:1.5;
+  }
+
+  #fact-overlay{
+    position:absolute; left:50%; top:16%; transform:translate(-50%,0);
+    z-index:20; max-width:82%;
+    background:rgba(10,12,24,0.88);
+    border:1px solid rgba(43,108,255,0.5);
+    box-shadow:0 0 0 1px rgba(255,210,63,0.15) inset, 0 10px 30px rgba(0,0,0,0.4);
+    border-radius:16px; padding:14px 18px;
+    font-size:14px; line-height:1.5; color:#eef0ff;
+    opacity:0; transition:opacity 0.35s ease;
+    pointer-events:none;
+  }
+  #fact-overlay.show{ opacity:1; }
+  #fact-overlay .fact-tag{
+    display:block; font-size:10px; text-transform:uppercase; letter-spacing:0.08em;
+    color:var(--union-yellow); margin-bottom:6px; font-weight:700;
+  }
+
+  #hud{
+    position:absolute; top:0; left:0; right:0; z-index:5;
+    display:flex; justify-content:space-between; align-items:flex-start;
+    padding:calc(10px + env(safe-area-inset-top)) 16px 0;
+    pointer-events:none;
+  }
+  #hud .stat{ display:flex; align-items:center; gap:6px; font-weight:800; font-size:15px;
+    text-shadow:0 2px 6px rgba(0,0,0,0.6); }
+  #hud .stat img{ width:20px; height:20px; object-fit:contain; }
+  #hud .like-stat{ color:var(--like-pink); }
+  #hud .union-stat{ color:#8fb2ff; }
+
+  #loading{
+    position:absolute; inset:0; z-index:30; display:flex; align-items:center; justify-content:center;
+    color:#8c90aa; font-size:14px; background:var(--bg-dark);
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <canvas id="game"></canvas>
+
+  <div id="hud" class="hidden">
+    <div class="stat like-stat"><img src="assets/like_heart.png" alt=""><span id="hud-like">0</span></div>
+    <div class="stat union-stat"><img src="assets/union_shield.png" alt=""><span id="hud-union">0</span></div>
+  </div>
+
+  <div id="fact-overlay"><span class="fact-tag">Факт</span><span id="fact-text"></span></div>
+
+  <div id="loading">Загрузка…</div>
+
+  <div id="overlay-start" class="overlay hidden">
+    <div class="logo-row">
+      <img src="assets/like_heart.png" alt="">
+      <img src="assets/union_shield.png" alt="">
+    </div>
+    <h1 class="title">Соцсети: быть, а не казаться</h1>
+    <p class="subtitle">
+      Тапни экран, кликни или нажми «Пробел», чтобы взлететь.
+      В каждом проходе выбирай на лету: лететь к лайку или к профсоюзному делу —
+      пути не пересекаются, назад не свернуть.
+    </p>
+    <div class="legend">
+      <div class="legend-item"><img src="assets/like_fire.png" alt=""><span class="lbl-like">Лайки</span></div>
+      <div class="legend-item"><img src="assets/union_card.png" alt=""><span class="lbl-union">Профсоюз</span></div>
+    </div>
+    <button class="btn" id="btn-start">Начать</button>
+  </div>
+
+  <div id="overlay-gameover" class="overlay hidden">
+    <p class="like-score">Лайков собрано: <span id="go-like">0</span></p>
+    <p class="truth-caption">— это то, что было на самом деле —</p>
+    <p class="union-score">Профсоюзных дел: <span id="go-union">0</span></p>
+    <p class="tagline">Соцсети — быть, а не казаться.<br>Профсоюз — тоже.</p>
+    <button class="btn" id="btn-restart">Играть снова</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  const UNION_FACTS = [
+    "Профсоюз образования — один из крупнейших профсоюзов России",
+    "Членство в профсоюзе полностью добровольное",
+    "Профбилет даёт право на материальную помощь в трудной ситуации",
+    "Каждый вуз может иметь собственную первичную профсоюзную организацию",
+    "Профком помогает студентам разобраться в вопросах стипендий",
+    "Профсоюз работает над тем, чтобы права студентов были защищены",
+    "Профбилет — это не просто документ, а инструмент защиты прав",
+    "СКС Профсоюза объединяет студенческие организации по всей стране",
+    "Профком может ходатайствовать о матпомощи при рождении ребёнка",
+    "Участие в профсоюзе не влияет на учёбу — это отдельная добровольная активность",
+    "Профсоюз проводит образовательные форумы для студенческого актива",
+    "Высший орган Профсоюза — съезд, который собирается раз в несколько лет",
+    "Профорги избираются студентами прямо в своей группе",
+    "Профком помогает студентам с юридическими консультациями",
+    "Вступить в профсоюз можно в любой момент учёбы",
+    "Профсоюз участвует в организации студенческих спортивных мероприятий",
+    "Профсоюз объединяет миллионы студентов по всей России",
+    "Профком — это связующее звено между студентами и администрацией вуза",
+    "Профсоюз — это система, а не разовая акция",
+    "Профсоюз — это не только льготы, но и возможность влиять на жизнь вуза"
+  ];
+
+  // ---------- Asset list ----------
+  const ASSET_SOURCES = {
+    background: "assets/background.png",
+    player: "assets/player_new.png",
+    like_heart: "assets/like_heart.png",
+    like_bell: "assets/like_bell.png",
+    like_fire: "assets/like_fire.png",
+    like_star: "assets/like_star.png",
+    union_card: "assets/union_card.png",
+    union_coin: "assets/union_coin.png",
+    union_ticket: "assets/union_ticket.png",
+    union_shield: "assets/union_shield.png"
+  };
+  const LIKE_KEYS = ["like_heart","like_bell","like_fire","like_star"];
+  const UNION_KEYS = ["union_card","union_coin","union_ticket","union_shield"];
+
+  const images = {};
+  function loadImages(sources){
+    const keys = Object.keys(sources);
+    return Promise.all(keys.map(k => new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => { images[k] = img; resolve(); };
+      img.onerror = () => { images[k] = img; resolve(); };
+      img.src = sources[k];
+    })));
+  }
+
+  // ---------- Canvas setup ----------
+  const canvas = document.getElementById("game");
+  const ctx = canvas.getContext("2d");
+  let cw = 0, ch = 0, dpr = 1;
+
+  function resize(){
+    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    cw = window.innerWidth;
+    ch = window.innerHeight;
+    canvas.width = Math.round(cw * dpr);
+    canvas.height = Math.round(ch * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // scale factor to keep gameplay feel consistent across screen sizes
+  function scaleFactor(){
+    return Math.max(0.55, Math.min(1.35, ch / 800));
+  }
+
+  function drawCover(img, x, y, w, h){
+    if (!img || !img.width) return;
+    const ir = img.width / img.height, cr = w / h;
+    let sw, sh, sx, sy;
+    if (ir > cr){ sh = img.height; sw = sh * cr; sx = (img.width - sw) / 2; sy = 0; }
+    else { sw = img.width; sh = sw / cr; sx = 0; sy = (img.height - sh) / 2; }
+    ctx.drawImage(img, sx, sy, sw, sh, x, y, w, h);
+  }
+
+  // ---------- Game state ----------
+  const STATE = { LOADING:"loading", START:"start", PLAYING:"playing", DYING:"dying", GAMEOVER:"gameover" };
+  let state = STATE.LOADING;
+
+  let player, obstacles, decorIcons, factOverlayTimer;
+  let likeScore, unionScore, likeStreak, unionSinceLastFact, factThreshold;
+  let noiseLevel, noiseDecayTau, shakeTime, shakeMag, elapsed, spawnTimer;
+  let lastTs = 0;
+
+  function resetGame(){
+    const sf = scaleFactor();
+    player = {
+      x: cw * 0.26,
+      y: ch * 0.42,
+      vy: 0,
+      size: 62 * sf,
+      angle: 0
+    };
+    obstacles = [];
+    decorIcons = [];
+    likeScore = 0;
+    unionScore = 0;
+    likeStreak = 0;
+    unionSinceLastFact = 0;
+    factThreshold = 3 + Math.floor(Math.random() * 2); // 3 or 4
+    noiseLevel = 0;
+    noiseDecayTau = 4.0;
+    shakeTime = 0;
+    shakeMag = 0;
+    elapsed = 0;
+    spawnTimer = 0.4;
+    hideFact(true);
+    updateHud();
+  }
+
+  // ---------- Difficulty curves ----------
+  function currentSpeed(){
+    const sf = scaleFactor();
+    return Math.min(430 * sf, (215 + elapsed * 9) * sf);
+  }
+  function currentSpawnInterval(){
+    return Math.max(1.05, 1.62 - elapsed * 0.013);
+  }
+  function currentOpenFactor(){
+    const sf = scaleFactor();
+    const laneMin = player.size * 2.15;
+    const dividerThickness = Math.max(30, 52 * sf);
+    const minOpen = (laneMin * 2 + dividerThickness) / ch + 0.05;
+    const start = 0.74;
+    const target = Math.max(minOpen, 0.52);
+    const f = start - elapsed * 0.0035;
+    return Math.max(target, Math.min(start, f));
+  }
+
+  // ---------- Obstacles ----------
+  function spawnObstacle(){
+    const sf = scaleFactor();
+    const pipeWidth = Math.max(70, 92 * sf);
+    const marginTop = ch * 0.07;
+    const marginBottom = ch * 0.07;
+    const openFactor = currentOpenFactor();
+    const gapTotal = ch * openFactor;
+    const passageTop = marginTop + Math.random() * Math.max(0, (ch - marginTop - marginBottom - gapTotal));
+    const passageBottom = passageTop + gapTotal;
+
+    const laneMin = player.size * 2.15;
+    const dividerThickness = Math.max(30, 52 * sf);
+    const freePlay = Math.max(0, gapTotal - laneMin * 2 - dividerThickness);
+    const dividerTop = passageTop + laneMin + Math.random() * freePlay;
+    const dividerBottom = dividerTop + dividerThickness;
+
+    const upperLane = { top: passageTop, bottom: dividerTop };
+    const lowerLane = { top: dividerBottom, bottom: passageBottom };
+
+    const likeOnTop = Math.random() < 0.5;
+    const likeKey = LIKE_KEYS[Math.floor(Math.random() * LIKE_KEYS.length)];
+    const unionKey = UNION_KEYS[Math.floor(Math.random() * UNION_KEYS.length)];
+    const itemSize = Math.max(30, 44 * sf);
+
+    obstacles.push({
+      x: cw + pipeWidth,
+      width: pipeWidth,
+      passageTop, passageBottom,
+      dividerTop, dividerBottom,
+      items: [
+        {
+          kind: "like",
+          key: likeKey,
+          lane: likeOnTop ? upperLane : lowerLane,
+          size: itemSize,
+          collected: false
+        },
+        {
+          kind: "union",
+          key: unionKey,
+          lane: likeOnTop ? lowerLane : upperLane,
+          size: itemSize,
+          collected: false
+        }
+      ]
+    });
+  }
+
+  function laneCenterY(lane){ return (lane.top + lane.bottom) / 2; }
+
+  // ---------- Effects ----------
+  function triggerLikeEffect(){
+    likeStreak = Math.min(5, likeStreak + 1);
+    const t = likeStreak / 5;
+    noiseLevel = Math.min(1, 0.28 + t * 0.72);
+    noiseDecayTau = 4.0;
+    shakeMag = (5 + likeStreak * 3.4) * scaleFactor();
+    shakeTime = (0.20 + likeStreak * 0.02);
+  }
+
+  function triggerUnionEffect(){
+    likeStreak = 0;
+    noiseDecayTau = 1.1; // fast calm-down
+    unionSinceLastFact++;
+    if (unionSinceLastFact >= factThreshold){
+      unionSinceLastFact = 0;
+      factThreshold = 3 + Math.floor(Math.random() * 2);
+      showFact();
+    }
+  }
+
+  let lastFactIndex = -1;
+  function showFact(){
+    let idx;
+    do { idx = Math.floor(Math.random() * UNION_FACTS.length); }
+    while (UNION_FACTS.length > 1 && idx === lastFactIndex);
+    lastFactIndex = idx;
+    document.getElementById("fact-text").textContent = UNION_FACTS[idx];
+    const el = document.getElementById("fact-overlay");
+    el.classList.add("show");
+    clearTimeout(factOverlayTimer);
+    factOverlayTimer = setTimeout(() => { el.classList.remove("show"); }, 2000);
+  }
+  function hideFact(instant){
+    const el = document.getElementById("fact-overlay");
+    el.classList.remove("show");
+    clearTimeout(factOverlayTimer);
+  }
+
+  function spawnDecorIcon(){
+    const sf = scaleFactor();
+    const pool = LIKE_KEYS;
+    const key = pool[Math.floor(Math.random() * pool.length)];
+    const size = (22 + Math.random() * 20) * sf;
+    decorIcons.push({
+      key,
+      x: Math.random() * cw,
+      y: ch + size,
+      vx: (Math.random() * 2 - 1) * 22 * sf,
+      vy: -(35 + Math.random() * 45) * sf,
+      rot: Math.random() * Math.PI * 2,
+      vr: (Math.random() * 2 - 1) * 1.2,
+      size,
+      life: 0,
+      maxLife: 3.5 + Math.random() * 2.5,
+      alpha: Math.min(0.55, 0.15 + noiseLevel * 0.4)
+    });
+  }
+
+  // ---------- HUD ----------
+  function updateHud(){
+    document.getElementById("hud-like").textContent = likeScore;
+    document.getElementById("hud-union").textContent = unionScore;
+  }
+
+  // ---------- Input ----------
+  function flap(){
+    if (state === STATE.START){ startGame(); return; }
+    if (state !== STATE.PLAYING) return;
+    const sf = scaleFactor();
+    const jitter = 1 + (Math.random() * 2 - 1) * noiseLevel * 0.35;
+    player.vy = -480 * sf * jitter;
+  }
+
+  function onPointerDown(e){
+    e.preventDefault();
+    flap();
+  }
+  canvas.addEventListener("pointerdown", onPointerDown, { passive:false });
+  window.addEventListener("keydown", (e) => {
+    if (e.code === "Space"){ e.preventDefault(); flap(); }
+  });
+
+  document.getElementById("btn-start").addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation(); startGame();
+  });
+  document.getElementById("btn-restart").addEventListener("click", (e) => {
+    e.preventDefault(); e.stopPropagation(); startGame();
+  });
+
+  function setOverlay(id, show){
+    document.getElementById(id).classList.toggle("hidden", !show);
+  }
+
+  function startGame(){
+    resetGame();
+    state = STATE.PLAYING;
+    setOverlay("overlay-start", false);
+    setOverlay("overlay-gameover", false);
+    setOverlay("hud", true) || (document.getElementById("hud").classList.remove("hidden"));
+  }
+
+  function goToGameOver(){
+    state = STATE.GAMEOVER;
+    document.getElementById("go-like").textContent = likeScore;
+    document.getElementById("go-union").textContent = unionScore;
+    document.getElementById("hud").classList.add("hidden");
+    setOverlay("overlay-gameover", true);
+  }
+
+  // ---------- Update ----------
+  function rectsOverlap(ax, ay, aw, ah, bx, by, bw, bh){
+    return ax < bx + bw && ax + aw > bx && ay < by + bh && ay + ah > by;
+  }
+
+  function update(dt){
+    elapsed += dt;
+
+    // noise decays toward 0
+    noiseLevel += (0 - noiseLevel) * Math.min(1, dt / noiseDecayTau);
+    if (noiseLevel < 0.002) noiseLevel = 0;
+
+    if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+
+    if (state === STATE.PLAYING){
+      const sf = scaleFactor();
+      const gravityJitter = (Math.random() * 2 - 1) * noiseLevel * 900 * sf;
+      const gravity = 1650 * sf + gravityJitter;
+      player.vy = Math.min(850 * sf, player.vy + gravity * dt);
+      player.y += player.vy * dt;
+      player.angle = Math.max(-0.5, Math.min(1.1, player.vy / (850 * sf)));
+
+      const speed = currentSpeed();
+
+      spawnTimer -= dt;
+      if (spawnTimer <= 0){
+        spawnObstacle();
+        spawnTimer = currentSpawnInterval();
+      }
+
+      for (let i = obstacles.length - 1; i >= 0; i--){
+        const ob = obstacles[i];
+        ob.x -= speed * dt;
+
+        const px = player.x - player.size * 0.32;
+        const py = player.y - player.size * 0.32;
+        const pw = player.size * 0.64;
+        const ph = player.size * 0.64;
+
+        if (px + pw > ob.x && px < ob.x + ob.width){
+          if (rectsOverlap(px, py, pw, ph, ob.x, 0, ob.width, ob.passageTop) ||
+              rectsOverlap(px, py, pw, ph, ob.x, ob.passageBottom, ob.width, ch - ob.passageBottom) ||
+              rectsOverlap(px, py, pw, ph, ob.x, ob.dividerTop, ob.width, ob.dividerBottom - ob.dividerTop)){
+            triggerDeath();
+          }
+        }
+
+        for (const item of ob.items){
+          if (item.collected) continue;
+          const iy = laneCenterY(item.lane);
+          const ix = ob.x + ob.width / 2;
+          const dx = (player.x) - ix;
+          const dy = (player.y) - iy;
+          const dist = Math.sqrt(dx*dx + dy*dy);
+          if (dist < (player.size * 0.42 + item.size * 0.42)){
+            item.collected = true;
+            if (item.kind === "like"){
+              const gain = 15 + Math.floor(Math.random() * 11);
+              likeScore += gain;
+              triggerLikeEffect();
+            } else {
+              const gain = 5 + Math.floor(Math.random() * 6);
+              unionScore += gain;
+              triggerUnionEffect();
+            }
+            updateHud();
+          }
+        }
+
+        if (ob.x + ob.width < -5) obstacles.splice(i, 1);
+      }
+
+      if (player.y - player.size * 0.5 > ch || player.y + player.size * 0.5 < 0){
+        triggerDeath();
+      }
+    }
+
+    // decorative icons always animate (even after death, for visual continuity)
+    const spawnChance = noiseLevel * 0.9;
+    if (state === STATE.PLAYING && Math.random() < spawnChance * (dt * 10)){
+      spawnDecorIcon();
+    }
+    for (let i = decorIcons.length - 1; i >= 0; i--){
+      const d = decorIcons[i];
+      d.x += d.vx * dt;
+      d.y += d.vy * dt;
+      d.rot += d.vr * dt;
+      d.life += dt;
+      if (d.life > d.maxLife || d.y < -60) decorIcons.splice(i, 1);
+    }
+
+    if (state === STATE.DYING){
+      const sf = scaleFactor();
+      player.vy = Math.min(850 * sf, player.vy + 1650 * sf * dt);
+      player.y += player.vy * dt;
+      player.angle = Math.min(1.4, player.angle + dt * 2);
+      if (player.y > ch + player.size){
+        goToGameOver();
+      }
+    }
+  }
+
+  function triggerDeath(){
+    if (state !== STATE.PLAYING) return;
+    state = STATE.DYING;
+    shakeMag = 10 * scaleFactor();
+    shakeTime = 0.25;
+  }
+
+  // ---------- Render ----------
+  function drawObstacle(ob){
+    const grad1 = ctx.createLinearGradient(ob.x, 0, ob.x + ob.width, 0);
+    grad1.addColorStop(0, "#1b2038");
+    grad1.addColorStop(1, "#2a3156");
+    ctx.fillStyle = grad1;
+
+    roundRectPath(ob.x, -10, ob.width, ob.passageTop + 10, 14);
+    ctx.fill();
+    roundRectPath(ob.x, ob.passageBottom, ob.width, (ch - ob.passageBottom) + 10, 14);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    roundRectPath(ob.x, ob.dividerTop, ob.width, ob.dividerBottom - ob.dividerTop, 10);
+    ctx.fill();
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 2;
+    roundRectPath(ob.x, ob.dividerTop, ob.width, ob.dividerBottom - ob.dividerTop, 10);
+    ctx.stroke();
+
+    for (const item of ob.items){
+      if (item.collected) continue;
+      const img = images[item.key];
+      const cx = ob.x + ob.width / 2;
+      const cy = laneCenterY(item.lane);
+      const glow = item.kind === "like" ? "rgba(255,77,125,0.35)" : "rgba(43,108,255,0.35)";
+      ctx.save();
+      ctx.shadowColor = glow;
+      ctx.shadowBlur = 16;
+      if (img && img.width){
+        ctx.drawImage(img, cx - item.size/2, cy - item.size/2, item.size, item.size);
+      }
+      ctx.restore();
+    }
+  }
+
+  function roundRectPath(x, y, w, h, r){
+    r = Math.min(r, w/2, h/2);
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.arcTo(x + w, y, x + w, y + h, r);
+    ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r);
+    ctx.arcTo(x, y, x + w, y, r);
+    ctx.closePath();
+  }
+
+  function render(){
+    ctx.clearRect(0, 0, cw, ch);
+
+    let sx = 0, sy = 0;
+    if (shakeTime > 0){
+      sx = (Math.random() * 2 - 1) * shakeMag;
+      sy = (Math.random() * 2 - 1) * shakeMag;
+    }
+
+    ctx.save();
+    ctx.translate(sx, sy);
+
+    if (images.background && images.background.width){
+      drawCover(images.background, -4, -4, cw + 8, ch + 8);
+    } else {
+      ctx.fillStyle = "#0d1024";
+      ctx.fillRect(0,0,cw,ch);
+    }
+
+    ctx.fillStyle = "rgba(5,6,16,0.28)";
+    ctx.fillRect(0,0,cw,ch);
+
+    for (const d of decorIcons){
+      const img = images[d.key];
+      if (!img || !img.width) continue;
+      let a = d.alpha;
+      const fadeIn = 0.4, fadeOut = 0.8;
+      if (d.life < fadeIn) a *= (d.life / fadeIn);
+      else if (d.life > d.maxLife - fadeOut) a *= Math.max(0, (d.maxLife - d.life) / fadeOut);
+      ctx.save();
+      ctx.globalAlpha = Math.max(0, a);
+      ctx.translate(d.x, d.y);
+      ctx.rotate(d.rot);
+      ctx.drawImage(img, -d.size/2, -d.size/2, d.size, d.size);
+      ctx.restore();
+    }
+
+    for (const ob of obstacles) drawObstacle(ob);
+
+    if (state !== STATE.GAMEOVER){
+      const img = images.player;
+      ctx.save();
+      ctx.translate(player.x, player.y);
+      ctx.rotate(player.angle);
+      if (img && img.width){
+        ctx.drawImage(img, -player.size/2, -player.size/2, player.size, player.size);
+      } else {
+        ctx.fillStyle = "#ffd23f";
+        ctx.beginPath();
+        ctx.arc(0,0,player.size/2,0,Math.PI*2);
+        ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    ctx.restore();
+  }
+
+  // ---------- Main loop ----------
+  function loop(ts){
+    if (!lastTs) lastTs = ts;
+    let dt = (ts - lastTs) / 1000;
+    dt = Math.min(dt, 0.033);
+    lastTs = ts;
+
+    if (state === STATE.PLAYING || state === STATE.DYING){
+      update(dt);
+    } else {
+      // keep decor icons idle-animating subtly on start/gameover screens
+      for (let i = decorIcons.length - 1; i >= 0; i--){
+        const d = decorIcons[i];
+        d.x += d.vx * dt; d.y += d.vy * dt; d.rot += d.vr * dt; d.life += dt;
+        if (d.life > d.maxLife || d.y < -60) decorIcons.splice(i, 1);
+      }
+      if (shakeTime > 0) shakeTime = Math.max(0, shakeTime - dt);
+    }
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  // ---------- Boot ----------
+  loadImages(ASSET_SOURCES).then(() => {
+    document.getElementById("loading").classList.add("hidden");
+    state = STATE.START;
+    obstacles = [];
+    decorIcons = [];
+    player = { x: cw*0.26, y: ch*0.42, vy:0, size: 62*scaleFactor(), angle:0 };
+    setOverlay("overlay-start", true);
+    requestAnimationFrame(loop);
+  });
+
+})();
+</script>
+</body>
+</html>
